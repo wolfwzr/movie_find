@@ -7,7 +7,7 @@ SELECT '<li align="left"><FONT SIZE="2">',
 FROM movie
 WHERE
     average>=8.0
-    AND numRaters>=100000
+    AND numRaters>=10000
 ORDER BY
     average DESC,
     numRaters DESC;
@@ -39,7 +39,7 @@ SELECT '<p><table border="0"><a name="',id,'"></a>',
 FROM movie
 WHERE
     average>=8.0
-    AND numRaters>=100000
+    AND numRaters>=10000
 ORDER BY
     average DESC,
     numRaters DESC;

@@ -62,7 +62,8 @@ gen_html()
 EOF
     sqlite3 -separator "" "$DB_FILE" ".read $GEN_HTML_SQL_FILE" >> "$HTML_OUTPUT"
     cat >> "$HTML_OUTPUT" << EOF
-    <P><h3><FONT SIZE="2" COLOR="BLUE">Project: https://github.com/wolfwzr/movie_find.git</FONT></h3></P>
+    <P><FONT SIZE="2" COLOR="BLUE">GitHub Project: <a href="https://github.com/wolfwzr/movie_find">https://github.com/wolfwzr/movie_find</a></FONT>
+    <FONT SIZE="2" COLOR="BLUE">小白狼出品</FONT></a></P>
     </body> 
 </html>
 EOF
