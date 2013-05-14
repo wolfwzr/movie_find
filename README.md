@@ -8,9 +8,13 @@ movie_find
 * python
 * sqlite3
 * wkhtmltopdf
-用来将html转换成pdf
-下载地址：http://code.google.com/p/wkhtmltopdf/
-安装完成后确保wkhtmltopdf命令能运行
+
+> 用来将html转换成pdf
+
+> 下载地址：http://code.google.com/p/wkhtmltopdf
+
+> 安装完成后确保wkhtmltopdf命令能运行
+
 
 ### 使用方法
 1. git clone https://github.com/wolfwzr/movie_find.git
