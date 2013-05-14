@@ -17,6 +17,7 @@ average=float(s["rating"]["average"])
 title=s["title"].encode("utf-8").replace("'","''")
 alt_title=s["alt_title"].encode("utf-8").replace("'","''")
 summary=s["summary"].encode("utf-8").replace("'","''")
+image=s["image"].encode("utf-8").replace("'","''")
 
 val=""
 if s.has_key("attrs") and s["attrs"].has_key("year"):
@@ -47,11 +48,21 @@ if s.has_key("attrs") and s["attrs"].has_key("director"):
 director=val.encode("utf-8").replace("'","''")
 
 val=""
+if s.has_key("attrs") and s["attrs"].has_key("cast"):
+	size=len(s["attrs"]["cast"])
+	for i in range(0, size):
+		val=val + s["attrs"]["cast"][i] + " "
+cast=val.encode("utf-8").replace("'","''")
+
+val=""
 if s.has_key("attrs") and s["attrs"].has_key("movie_type"):
 	size=len(s["attrs"]["movie_type"])
 	for i in range(0, size):
 		val=val + s["attrs"]["movie_type"][i] + " "
 m_type=val.encode("utf-8").replace("'","''")
+
+
+
 
 print "INSERT INTO movie VALUES (" +\
 	str(m_id) 	+ ","   +\
@@ -59,10 +70,12 @@ print "INSERT INTO movie VALUES (" +\
 	str(numRaters)	+ ",'"  +\
 	title 		+ "','" +\
 	alt_title 	+ "','" +\
+	image 		+ "','" +\
 	country 	+ "','" +\
 	year 		+ "','" +\
 	language 	+ "','" +\
 	director 	+ "','" +\
+	cast 		+ "','" +\
 	m_type 		+ "','" +\
 	summary 	+ "');"
 

@@ -6,10 +6,9 @@ JSON_BASE_URL="https://api.douban.com/v2/movie/"
 DB_FILE=movie.db
 SQL_TXT=insert.sql
 
- PDF_OUTPUT="index.pdf"
-HTML_OUTPUT="index.html"
-HTML_PREFIX="html_prefix"
-HTML_SUFFIX="html_suffix"
+ PDF_OUTPUT="douban_movie.pdf"
+HTML_OUTPUT="douban_movie.html"
+GEN_HTML_SQL_FILE="gen_html.sql"
 HTML2PDF="./wkhtmltopdf-i386"
 
 LIST_FILE=".list.html"
@@ -24,10 +23,12 @@ CREATE TABLE movie(
     numRaters INTERGER,
     title TEXT NOT NULL,
     alt_title TEXT,
+    image TEXT NOT NULL,
     country TEXT,
     year TEXT,
     language TEXT,
     director TEXT,
+    cast TEXT,
     type TEXT,
     summary TEXT
 );
@@ -43,7 +44,7 @@ gen_sql()
 {
     local id
 
-    cat /etc/null > "$SQL_TXT"
+    cat /dev/null > "$SQL_TXT"
     for json in json/*; do 
         id=${json##*/}
         id=${id%%\.json}
@@ -54,40 +55,55 @@ gen_sql()
 
 gen_html()
 {
-    cat "$HTML_PREFIX" > "$HTML_OUTPUT"
-    sqlite3 -html -header "$DB_FILE"           "\
-        SELECT                                  \
-            title       AS '片名',              \
-            alt_title   AS '别名',              \
-            numRaters   AS '评分人数',          \
-            average     AS '评分',              \
-            country     AS '国家',              \
-            year        AS '年份',              \
-            type        AS '类型',              \
-            summary     AS '内容概要'           \
-        FROM movie                              \
-        WHERE                                   \
-            average>=8.0                        \
-            AND numRaters>=10000                \
-        ORDER BY                                \
-            numRaters DESC,                     \
-            average DESC;                       \
-        " >> "$HTML_OUTPUT"
-    cat "$HTML_SUFFIX" >> "$HTML_OUTPUT"
-}
-
-gen_html_v2()
-{
     cat > "$HTML_OUTPUT" << EOF
 <html> 
     <head><meta http-equiv="content-type" content="text/html;charset=utf-8"></head>
     <body>
 EOF
-    sqlite3 -separator "" "$DB_FILE" ".read sql" >> "$HTML_OUTPUT"
+    sqlite3 -separator "" "$DB_FILE" ".read $GEN_HTML_SQL_FILE" >> "$HTML_OUTPUT"
     cat >> "$HTML_OUTPUT" << EOF
+    <P><h3><FONT SIZE="2" COLOR="BLUE">Project: https://github.com/wolfwzr/movie_find.git</FONT></h3></P>
     </body> 
 </html>
 EOF
+}
+
+down_images()
+{
+    local info="$(mktemp)"
+    local id
+    local image
+    local image_name
+    local wget_cnt
+    local max_wget=100
+
+    mkdir -p images
+    sqlite3 "$DB_FILE" "SELECT id,image FROM movie;" > "$info"
+    while read line; do
+        id=${line%%|*}
+        image=${line##*|}
+        image_name="${id}.jpg"
+        while :; do
+            wget_cnt=$(pgrep -c wget)
+            [ "$wget_cnt" -lt "$max_wget" ] && {
+                echo "[GET] $image"
+                wget -c -o /dev/null -O "images/$image_name" "$image" &
+                break
+            } || {
+                echo "[SLEEP] wget number: $wget_cnt"
+                sleep 1
+            }
+        done
+    done < "$info"
+    # waitting for download complete
+    while :; do
+        wget_cnt=$(pgrep -c wget)
+        [ "$wget_cnt" -ne 0 ] && {
+            echo "[SLEEP] wget number: $wget_cnt"
+            sleep 1
+        } || break
+    done
+    rm -f "$info"
 }
 
 gen_pdf()
@@ -111,14 +127,14 @@ get_movies_by_page()
     }
 
     page_url="$1"
-    echo "[WGET] $page_url"
+    echo "[GET] $page_url"
     wget -c "$page_url" -O "$LIST_FILE" -o /dev/null
     grep 'class="nbg"' "$LIST_FILE" | grep -o "http://movie.douban.com/subject/[0-9]*" | sort | uniq > "$TMP"
     while read movie_page_url; do
         index=${movie_page_url##*/}
         json_url="$JSON_BASE_URL/$index"
         json_file="json/${index}.json"
-        echo "[WGET] $json_file"
+        echo "[GET] $json_file"
         # 后台下载电影信息(json文件）以加快下载速度
         wget -c "$json_url" -O "$json_file" -o /dev/null &
     done < "$TMP"
@@ -157,13 +173,19 @@ get_movies_by_tag()
     done
 }
 
+test()
+{
+    #gen_html
+    gen_pdf
+    exit 0
+}
+
 ########### Code Start From Here ###########
 
+mkdir -p json images
 
-gen_html_v2
-exit 0
+test
 
-mkdir -p json
 while read tag; do
     get_movies_by_tag "$tag"
 done < tags
@@ -172,6 +194,7 @@ rm -fv "$TMP" "$LIST_FILE"
 gen_sql
 create_db
 exec_sql
+down_images
 gen_html
 gen_pdf
 exit 0
