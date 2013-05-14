@@ -184,7 +184,7 @@ test()
 
 mkdir -p json images
 
-test
+#test
 
 while read tag; do
     get_movies_by_tag "$tag"
