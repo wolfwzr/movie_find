@@ -9,7 +9,7 @@ SQL_TXT=insert.sql
  PDF_OUTPUT="douban_movie.pdf"
 HTML_OUTPUT="douban_movie.html"
 GEN_HTML_SQL_FILE="gen_html.sql"
-HTML2PDF="./wkhtmltopdf-i386"
+HTML2PDF="wkhtmltopdf"
 
 LIST_FILE=".list.html"
 TMP=".tmp"
