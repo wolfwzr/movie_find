@@ -3,17 +3,23 @@
 LIST_BASE_URL="http://movie.douban.com/tag/"
 JSON_BASE_URL="https://api.douban.com/v2/movie/"
 
-DB_FILE=movie.db
-SQL_TXT=insert.sql
+ DB_FILE="movie.db"
+ SQL_TXT="insert.sql"
+TAG_FILE="tags"
 
  PDF_OUTPUT="douban_movie.pdf"
 HTML_OUTPUT="douban_movie.html"
 GEN_HTML_SQL_FILE="gen_html.sql"
 HTML2PDF="wkhtmltopdf"
 
+FIREFOX_AGENT_STRING="Mozilla/5.0 (Windows NT 6.1; WOW64; rv:23.0) Gecko/20130406 Firefox/23.0"
+AGENT_STRING="$FIREFOX_AGENT_STRING"
+WGET_OPTIONS="-c --user-agent=$AGENT_STRING -o /dev/null" 
+
 LIST_FILE=".list.html"
 TMP=".tmp"
 
+# 创建数据库和表
 create_db()
 {
     sqlite3 "$DB_FILE" << EOF
@@ -35,11 +41,13 @@ CREATE TABLE movie(
 EOF
 }
 
+# 执行SQL语句
 exec_sql()
 {
     sqlite3 "$DB_FILE" ".read $SQL_TXT"
 }
 
+# 解析json文件并生成SQL语句
 gen_sql()
 {
     local id
@@ -53,7 +61,8 @@ gen_sql()
     done 
 }
 
-gen_html()
+# 生成html格式报告
+gen_html_report()
 {
     cat > "$HTML_OUTPUT" << EOF
 <html> 
@@ -69,6 +78,14 @@ EOF
 EOF
 }
 
+# 生成pdf格式报告
+gen_pdf_report()
+{
+    gen_html_report
+    "${HTML2PDF}" "$HTML_OUTPUT" "$PDF_OUTPUT"
+}
+
+# 下载数据库中所有电影的封面
 down_images()
 {
     local info="$(mktemp)"
@@ -87,8 +104,8 @@ down_images()
         while :; do
             wget_cnt=$(pgrep -c wget)
             [ "$wget_cnt" -lt "$max_wget" ] && {
-                echo "[GET] $image"
-                wget -c -o /dev/null -O "images/$image_name" "$image" &
+                echo "[ GET ] $image"
+                wget $WGET_OPTIONS -O "images/$image_name" "$image" &
                 break
             } || {
                 echo "[SLEEP] wget number: $wget_cnt"
@@ -96,7 +113,7 @@ down_images()
             }
         done
     done < "$info"
-    # waitting for download complete
+    # 等待下载完成
     while :; do
         wget_cnt=$(pgrep -c wget)
         [ "$wget_cnt" -ne 0 ] && {
@@ -107,12 +124,8 @@ down_images()
     rm -f "$info"
 }
 
-gen_pdf()
-{
-    gen_html
-    "${HTML2PDF}" "$HTML_OUTPUT" "$PDF_OUTPUT"
-}
-
+# 下载指定电影列表网页的电影信息（json文件）
+# 参数一：目标网址
 get_movies_by_page()
 {
     local num
@@ -128,16 +141,16 @@ get_movies_by_page()
     }
 
     page_url="$1"
-    echo "[GET] $page_url"
-    wget -c "$page_url" -O "$LIST_FILE" -o /dev/null
+    echo "[ GET ] $page_url"
+    wget $WGET_OPTIONS "$page_url" -O "$LIST_FILE"
     grep 'class="nbg"' "$LIST_FILE" | grep -o "http://movie.douban.com/subject/[0-9]*" | sort | uniq > "$TMP"
     while read movie_page_url; do
         index=${movie_page_url##*/}
         json_url="$JSON_BASE_URL/$index"
         json_file="json/${index}.json"
-        echo "[GET] $json_file"
+        echo "[ GET ] $json_file"
         # 后台下载电影信息(json文件）以加快下载速度
-        wget -c "$json_url" -O "$json_file" -o /dev/null &
+        wget $WGET_OPTIONS "$json_url" -O "$json_file" &
     done < "$TMP"
 
     # 等待当前页面的电影信息(json文件)全部下载完成
@@ -150,6 +163,8 @@ get_movies_by_page()
     done
 }
 
+# 根据标签获取电影信息（下载json文件）
+# 参数一：目标标签
 get_movies_by_tag()
 {
     local tag
@@ -164,20 +179,19 @@ get_movies_by_tag()
     tag_list_url="$LIST_BASE_URL/$tag"
     while :; do
         [ -z "$tag_list_url" ] && break
-
         # 解析当前页面的电影列表
         get_movies_by_page "$tag_list_url"
-
         # 获取下一页地址
-        wget "$tag_list_url" -O "$LIST_FILE" -o /dev/null
+        wget $WGET_OPTIONS "$tag_list_url" -O "$LIST_FILE"
         tag_list_url=$(grep -o "<[^<]*后页" "$LIST_FILE" | grep -o "http://[^\"]*")
     done
 }
 
-test()
+just_test()
 {
-    #gen_html
-    gen_pdf
+    #gen_html_report
+    gen_pdf_report
+    rm -f "$TMP" "$LIST_FILE"
     exit 0
 }
 
@@ -185,17 +199,17 @@ test()
 
 mkdir -p json images
 
-test
+#just_test
 
 while read tag; do
     get_movies_by_tag "$tag"
-done < tags
-rm -fv "$TMP" "$LIST_FILE"
+done < "$TAG_FILE"
+rm -f "$TMP" "$LIST_FILE"
 
 gen_sql
 create_db
 exec_sql
 down_images
-gen_html
-gen_pdf
+gen_html_report
+gen_pdf_report
 exit 0
