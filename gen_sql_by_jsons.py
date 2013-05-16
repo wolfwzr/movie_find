@@ -61,9 +61,6 @@ if s.has_key("attrs") and s["attrs"].has_key("movie_type"):
 		val=val + s["attrs"]["movie_type"][i] + " "
 m_type=val.encode("utf-8").replace("'","''")
 
-
-
-
 print "INSERT INTO movie VALUES (" +\
 	str(m_id) 	+ ","   +\
 	str(average)	+ ","   +\

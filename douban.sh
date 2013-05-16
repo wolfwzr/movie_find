@@ -12,12 +12,26 @@ HTML_OUTPUT="douban_movie.html"
 GEN_HTML_SQL_FILE="gen_html.sql"
 HTML2PDF="wkhtmltopdf"
 
+LIST_FILE="$(mktemp)"
+TMP="$(mktemp)"
+
 FIREFOX_AGENT_STRING="Mozilla/5.0 (Windows NT 6.1; WOW64; rv:23.0) Gecko/20130406 Firefox/23.0"
 AGENT_STRING="$FIREFOX_AGENT_STRING"
-WGET_OPTIONS="-c --user-agent=$AGENT_STRING -o /dev/null" 
 
-LIST_FILE=".list.html"
-TMP=".tmp"
+my_wget()
+{
+    local src
+    local file
+
+    [ $# -ne 2 ] && {
+        echo "Usage: my_wget <src> <file>"
+        return
+    }
+
+    src=$1
+    file=$2
+    wget -c --user-agent="$AGENT_STRING" -o /dev/null -O "$file" "$src" 
+}
 
 # 创建数据库和表
 create_db()
@@ -105,7 +119,7 @@ down_images()
             wget_cnt=$(pgrep -c wget)
             [ "$wget_cnt" -lt "$max_wget" ] && {
                 echo "[ GET ] $image"
-                wget $WGET_OPTIONS -O "images/$image_name" "$image" &
+                my_wget "$image" "images/$image_name" &
                 break
             } || {
                 echo "[SLEEP] wget number: $wget_cnt"
@@ -142,7 +156,7 @@ get_movies_by_page()
 
     page_url="$1"
     echo "[ GET ] $page_url"
-    wget $WGET_OPTIONS "$page_url" -O "$LIST_FILE"
+    my_wget "$page_url" "$LIST_FILE"
     grep 'class="nbg"' "$LIST_FILE" | grep -o "http://movie.douban.com/subject/[0-9]*" | sort | uniq > "$TMP"
     while read movie_page_url; do
         index=${movie_page_url##*/}
@@ -150,7 +164,7 @@ get_movies_by_page()
         json_file="json/${index}.json"
         echo "[ GET ] $json_file"
         # 后台下载电影信息(json文件）以加快下载速度
-        wget $WGET_OPTIONS "$json_url" -O "$json_file" &
+        my_wget "$json_url" "$json_file" &
     done < "$TMP"
 
     # 等待当前页面的电影信息(json文件)全部下载完成
@@ -182,7 +196,7 @@ get_movies_by_tag()
         # 解析当前页面的电影列表
         get_movies_by_page "$tag_list_url"
         # 获取下一页地址
-        wget $WGET_OPTIONS "$tag_list_url" -O "$LIST_FILE"
+        my_wget "$tag_list_url" "$LIST_FILE"
         tag_list_url=$(grep -o "<[^<]*后页" "$LIST_FILE" | grep -o "http://[^\"]*")
     done
 }
