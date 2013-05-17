@@ -4,11 +4,13 @@ LIST_BASE_URL="http://movie.douban.com/tag/"
 JSON_BASE_URL="https://api.douban.com/v2/movie/"
 
  DB_FILE="movie.db"
- SQL_TXT="insert.sql"
+ SQL_TXT=".insert.sql"
 TAG_FILE="tags"
+SLVD_TAG_FILE=".tags.slv"
+NEW_JSONS=".new_jsons"
 
  PDF_OUTPUT="douban_movie.pdf"
-HTML_OUTPUT="douban_movie.html"
+HTML_OUTPUT=".douban_movie.html"
 GEN_HTML_SQL_FILE="gen_html.sql"
 HTML2PDF="wkhtmltopdf"
 
@@ -36,6 +38,8 @@ my_wget()
 # 创建数据库和表
 create_db()
 {
+    [ -f "$DB_FILE" ] && return
+
     sqlite3 "$DB_FILE" << EOF
 CREATE TABLE movie(
     id INTERGER PRIMARY KEY,
@@ -67,12 +71,12 @@ gen_sql()
     local id
 
     cat /dev/null > "$SQL_TXT"
-    for json in json/*; do 
+    while read json; do
         id=${json##*/}
         id=${id%%\.json}
         echo "[PRASE] $json"
         python gen_sql_by_jsons.py "$json" "$id" >> "$SQL_TXT"
-    done 
+    done < "$NEW_JOSNS"
 }
 
 # 生成html格式报告
@@ -105,7 +109,7 @@ down_images()
     local info="$(mktemp)"
     local id
     local image
-    local image_name
+    local image_file
     local wget_cnt
     local max_wget=100
 
@@ -114,18 +118,22 @@ down_images()
     while read line; do
         id=${line%%|*}
         image=${line##*|}
-        image_name="${id}.jpg"
-        while :; do
-            wget_cnt=$(pgrep -c wget)
-            [ "$wget_cnt" -lt "$max_wget" ] && {
-                echo "[ GET ] $image"
-                my_wget "$image" "images/$image_name" &
-                break
-            } || {
-                echo "[SLEEP] wget number: $wget_cnt"
-                sleep 1
-            }
-        done
+        image_file="images/${id}.jpg"
+        [ -f "$image_file" ] && {
+            echo "[ IGN ] existed. $image_file"
+        } || {
+            while :; do
+                wget_cnt=$(pgrep -c wget)
+                [ "$wget_cnt" -lt "$max_wget" ] && {
+                    echo "[ GET ] $image"
+                    my_wget "$image" "$image_file" &
+                    break
+                } || {
+                    echo "[SLEEP] wget number: $wget_cnt"
+                    sleep 1
+                }
+            done
+        }
     done < "$info"
     # 等待下载完成
     while :; do
@@ -162,9 +170,14 @@ get_movies_by_page()
         index=${movie_page_url##*/}
         json_url="$JSON_BASE_URL/$index"
         json_file="json/${index}.json"
-        echo "[ GET ] $json_file"
-        # 后台下载电影信息(json文件）以加快下载速度
-        my_wget "$json_url" "$json_file" &
+        [ -f "$json_file" ] && {
+            echo "[ IGN ] existed $json_file"
+        } || {
+            echo "[ GET ] $json_file"
+            # 后台下载电影信息(json文件）以加快下载速度
+            my_wget "$json_url" "$json_file" &
+            echo "$json_file" >> "$NEW_JSONS"
+        }
     done < "$TMP"
 
     # 等待当前页面的电影信息(json文件)全部下载完成
@@ -216,7 +229,11 @@ mkdir -p json images
 #just_test
 
 while read tag; do
-    get_movies_by_tag "$tag"
+    grep -s -q "$tag" "$SLVD_TAG_FILE"
+    [ $? -ne 0 ] && {
+        get_movies_by_tag "$tag"
+        echo "$tag" >> "$SLVD_TAG_FILE"
+    } || continue
 done < "$TAG_FILE"
 rm -f "$TMP" "$LIST_FILE"
 
