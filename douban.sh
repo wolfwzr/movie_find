@@ -3,19 +3,20 @@
 LIST_BASE_URL="http://movie.douban.com/tag/"
 JSON_BASE_URL="https://api.douban.com/v2/movie/"
 
- DB_FILE="movie.db"
- SQL_TXT=".insert.sql"
+DB_FILE="movie.db"
+SQL_TXT=".insert.sql"
 TAG_FILE="tags"
 SLVD_TAG_FILE=".tags.slv"
 NEW_JSONS=".new_jsons"
 
- PDF_OUTPUT="douban_movie.pdf"
+PDF_OUTPUT="douban_movie.pdf"
 HTML_OUTPUT=".douban_movie.html"
 GEN_HTML_SQL_FILE="gen_html.sql"
 HTML2PDF="wkhtmltopdf"
 
-LIST_FILE="$(mktemp)"
-TMP="$(mktemp)"
+TMP_TEMPLATE="tmp_XXXXXXXXXXX"
+LIST_FILE=$(mktemp $TMP_TEMPLATE)
+TMP=$(mktemp $TMP_TEMPLATE)
 
 FIREFOX_AGENT_STRING="Mozilla/5.0 (Windows NT 6.1; WOW64; rv:23.0) Gecko/20130406 Firefox/23.0"
 AGENT_STRING="$FIREFOX_AGENT_STRING"
@@ -26,13 +27,15 @@ my_wget()
     local file
 
     [ $# -ne 2 ] && {
-        echo "Usage: my_wget <src> <file>"
+        echo "Usage: my_wget <url> <file>"
         return
     }
 
     src=$1
     file=$2
-    wget -c --user-agent="$AGENT_STRING" -o /dev/null -O "$file" "$src" 
+    [ -f "$file" ] && return
+    #wget -c --user-agent="$AGENT_STRING" -o /dev/null -O "$file" "$src" 
+    curl --user-agent "$AGENT_STRING" "$src" -o "$file" 2>&1 > /dev/null
 }
 
 # 创建数据库和表
@@ -74,24 +77,78 @@ gen_sql()
     while read json; do
         id=${json##*/}
         id=${id%%\.json}
-        echo "[PRASE] $json"
+        echo "[PARSE] $json"
         python gen_sql_by_jsons.py "$json" "$id" >> "$SQL_TXT"
-    done < "$NEW_JOSNS"
+    done < "$NEW_JSONS"
 }
 
 # 生成html格式报告
 gen_html_report()
 {
-    cat > "$HTML_OUTPUT" << EOF
+    local color_scheme=${1:-dark}
+    if [ "$color_scheme" = "dark" ]; then
+        body_style='style="background:#2E2E2E;color:#ECF6CE"'
+        style=".n{color: #FFFFCC;}"
+        style="${style}.title{color: #FFFF99;}"
+        style="${style}.field_head{color: #33FF99;}"
+        style="${style}.field_body{color: #CCFFFF;}"
+        style="${style}.field_summary{color: #AABBBB;}"
+        style="${style}.field_back_to_content{color: #00CC00;}"
+        style="${style}.footer{color: #E1F5A9;}"
+    else
+        body_style='style="background:#F7F8E0;color:#0A0A2A"'
+        style=".n{color: Blue;}"
+        style="${style}.title{color: Blue;}"
+        style="${style}.field_head{color: #5858FA;}"
+        style="${style}.field_body{color: #223399;}"
+        style="${style}.field_summary{color: #556677;}"
+        style="${style}.field_back_to_content{color: #008800;}"
+        style="${style}.footer{color: #445566;}"
+    fi
+
+cat > "$HTML_OUTPUT" << EOF
 <html> 
-    <head><meta http-equiv="content-type" content="text/html;charset=utf-8"></head>
-    <body>
+<head>
+<meta http-equiv="content-type" content="text/html;charset=utf-8">
+<style>
+.n{
+    TEXT-DECORATION: none;
+    font-size: 16;
+}
+.title{
+    font-size: 20;
+    font-style: bold;
+}
+.field_head{
+    font-size: 16;
+    font-style: bold;
+}
+.field_body{
+    font-size: 16;
+}
+.field_summary{
+    font-size: 16;
+    color: #AABBBB;
+}
+.field_back_to_content{
+    font-size: 13;
+}
+.footer{
+    font-size: 14;
+}
+$style
+</style>
+</head>
+<body $body_style>
 EOF
+
     sqlite3 -separator "" "$DB_FILE" ".read $GEN_HTML_SQL_FILE" >> "$HTML_OUTPUT"
-    cat >> "$HTML_OUTPUT" << EOF
-    <P align="left"><FONT SIZE="2" COLOR="BLUE">GitHub Project: <a href="https://github.com/wolfwzr/movie_find">https://github.com/wolfwzr/movie_find</a></FONT><br>
-    <FONT SIZE="2" COLOR="BLUE">小白狼出品</FONT></P>
-    </body> 
+
+cat >> "$HTML_OUTPUT" << EOF
+<hr/>
+<P align="left"><FONT class=footer>GitHub Project: <a class=footer href="https://github.com/wolfwzr/movie_find">https://github.com/wolfwzr/movie_find</a></FONT><br>
+<FONT class=footer>小白狼出品</FONT></P>
+</body> 
 </html>
 EOF
 }
@@ -100,13 +157,13 @@ EOF
 gen_pdf_report()
 {
     gen_html_report
-    "${HTML2PDF}" "$HTML_OUTPUT" "$PDF_OUTPUT"
+    ${HTML2PDF} "$HTML_OUTPUT" "$PDF_OUTPUT"
 }
 
 # 下载数据库中所有电影的封面
 down_images()
 {
-    local info="$(mktemp)"
+    local info=$(mktemp $TMP_TEMPLATE)
     local id
     local image
     local image_file
@@ -123,7 +180,7 @@ down_images()
             echo "[ IGN ] existed. $image_file"
         } || {
             while :; do
-                wget_cnt=$(pgrep -c wget)
+                wget_cnt=$(pgrep wget | wc -l)
                 [ "$wget_cnt" -lt "$max_wget" ] && {
                     echo "[ GET ] $image"
                     my_wget "$image" "$image_file" &
@@ -137,7 +194,7 @@ down_images()
     done < "$info"
     # 等待下载完成
     while :; do
-        wget_cnt=$(pgrep -c wget)
+        wget_cnt=$(pgrep wget | wc -l)
         [ "$wget_cnt" -ne 0 ] && {
             echo "[SLEEP] wget number: $wget_cnt"
             sleep 1
@@ -182,7 +239,7 @@ get_movies_by_page()
 
     # 等待当前页面的电影信息(json文件)全部下载完成
     while :; do
-        wget_cnt=$(pgrep -c wget)
+        wget_cnt=$(pgrep wget | wc -l)
         [ "$wget_cnt" -eq 0 ] && break || {
             echo "[SLEEP] wget number: $wget_cnt"
             sleep 1
@@ -209,6 +266,7 @@ get_movies_by_tag()
         # 解析当前页面的电影列表
         get_movies_by_page "$tag_list_url"
         # 获取下一页地址
+        [ -f "$LIST_FILE" ] && rm -f "$LIST_FILE"
         my_wget "$tag_list_url" "$LIST_FILE"
         tag_list_url=$(grep -o "<[^<]*后页" "$LIST_FILE" | grep -o "http://[^\"]*")
     done
@@ -226,21 +284,22 @@ just_test()
 
 mkdir -p json images
 
-#just_test
-
+touch "$SLVD_TAG_FILE"
 while read tag; do
-    grep -s -q "$tag" "$SLVD_TAG_FILE"
-    [ $? -ne 0 ] && {
+    if ! grep -s -q "$tag" "$SLVD_TAG_FILE"; then
         get_movies_by_tag "$tag"
         echo "$tag" >> "$SLVD_TAG_FILE"
-    } || continue
+    else continue; fi
 done < "$TAG_FILE"
 rm -f "$TMP" "$LIST_FILE"
+
+gen_html_report
+exit 0
 
 gen_sql
 create_db
 exec_sql
 down_images
 gen_html_report
-gen_pdf_report
+#gen_pdf_report
 exit 0

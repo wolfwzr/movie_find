@@ -7,7 +7,7 @@ if len(sys.argv) < 2:
 	sys.exit()
 
 path=sys.argv[1]
-m_id=sys.argv[2]
+douban_id=sys.argv[2]
 
 f=file(path)
 s=json.load(f)
@@ -61,8 +61,8 @@ if s.has_key("attrs") and s["attrs"].has_key("movie_type"):
 		val=val + s["attrs"]["movie_type"][i] + " "
 m_type=val.encode("utf-8").replace("'","''")
 
-print "INSERT INTO movie VALUES (" +\
-	str(m_id) 	+ ","   +\
+print "INSERT INTO movie VALUES ("+\
+	str(douban_id) 	+ ","   +\
 	str(average)	+ ","   +\
 	str(numRaters)	+ ",'"  +\
 	title 		+ "','" +\
@@ -75,4 +75,3 @@ print "INSERT INTO movie VALUES (" +\
 	cast 		+ "','" +\
 	m_type 		+ "','" +\
 	summary 	+ "');"
-
