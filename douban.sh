@@ -10,7 +10,7 @@ SLVD_TAG_FILE=".tags.slv"
 NEW_JSONS=".new_jsons"
 
 PDF_OUTPUT="douban_movie.pdf"
-HTML_OUTPUT=".douban_movie.html"
+HTML_OUTPUT="douban_movie.html"
 GEN_HTML_SQL_FILE="gen_html.sql"
 HTML2PDF="wkhtmltopdf"
 
@@ -35,7 +35,7 @@ my_wget()
     file=$2
     [ -f "$file" ] && return
     #wget -c --user-agent="$AGENT_STRING" -o /dev/null -O "$file" "$src" 
-    curl --user-agent "$AGENT_STRING" "$src" -o "$file" 2>&1 > /dev/null
+    curl --user-agent "$AGENT_STRING" "$src" -o "$file" 2>/dev/null
 }
 
 # 创建数据库和表
@@ -72,13 +72,19 @@ exec_sql()
 gen_sql()
 {
     local id
+    local cnt
+
+    echo "PARSE josn and generate sql statements"
 
     cat /dev/null > "$SQL_TXT"
     while read json; do
         id=${json##*/}
         id=${id%%\.json}
-        echo "[PARSE] $json"
-        python gen_sql_by_jsons.py "$json" "$id" >> "$SQL_TXT"
+        cnt=$(sqlite3 "$DB_FILE" "select count(id) from movie where id=$id;")
+        if [ $cnt -eq 0 ]; then
+            echo "[PARSE] $json"
+            python gen_sql_by_jsons.py "$json" "$id" >> "$SQL_TXT"
+        fi
     done < "$NEW_JSONS"
 }
 
@@ -86,30 +92,38 @@ gen_sql()
 gen_html_report()
 {
     local color_scheme=${1:-dark}
+
+    echo "generate html report ($color_scheme color scheme)"
+
     if [ "$color_scheme" = "dark" ]; then
-        body_style='style="background:#2E2E2E;color:#ECF6CE"'
-        style=".n{color: #FFFFCC;}"
-        style="${style}.title{color: #FFFF99;}"
-        style="${style}.field_head{color: #33FF99;}"
-        style="${style}.field_body{color: #CCFFFF;}"
-        style="${style}.field_summary{color: #AABBBB;}"
-        style="${style}.field_back_to_content{color: #00CC00;}"
-        style="${style}.footer{color: #E1F5A9;}"
+        body_style='style="background:#444444;color:#ECF6CE"'
+        style=" 
+            .n{color: #FFFFCC;}
+            .title{color: #FFFF99;}
+            .field_head{color: #33FF99;}
+            .field_body{color: #CCFFFF;}
+            .field_summary{color: #DDEEEE;}
+            .field_back_to_content{color: #00CC00;}
+            .footer{color: #E1F5A9;}
+            "
     else
         body_style='style="background:#F7F8E0;color:#0A0A2A"'
-        style=".n{color: Blue;}"
-        style="${style}.title{color: Blue;}"
-        style="${style}.field_head{color: #5858FA;}"
-        style="${style}.field_body{color: #223399;}"
-        style="${style}.field_summary{color: #556677;}"
-        style="${style}.field_back_to_content{color: #008800;}"
-        style="${style}.footer{color: #445566;}"
+        style="
+            .n{color: Blue;}
+            .title{color: Blue;}
+            .field_head{color: #5858FA;}
+            .field_body{color: #223399;}
+            .field_summary{color: #556677;}
+            .field_back_to_content{color: #008800;}
+            .footer{color: #445566;}
+            "
     fi
 
 cat > "$HTML_OUTPUT" << EOF
 <html> 
 <head>
 <meta http-equiv="content-type" content="text/html;charset=utf-8">
+<title> Movie of $(tr '\n' ',' < $TAG_FILE | sed 's/,$//g') </title>
 <style>
 .n{
     TEXT-DECORATION: none;
@@ -127,7 +141,7 @@ cat > "$HTML_OUTPUT" << EOF
     font-size: 16;
 }
 .field_summary{
-    font-size: 16;
+    font-size: 15;
     color: #AABBBB;
 }
 .field_back_to_content{
@@ -176,10 +190,10 @@ down_images()
         id=${line%%|*}
         image=${line##*|}
         image_file="images/${id}.jpg"
-        [ -f "$image_file" ] && {
-            echo "[ IGN ] existed. $image_file"
-        } || {
-            while :; do
+        if [ ! -f "$image_file" ]
+        then
+            while :
+            do
                 wget_cnt=$(pgrep wget | wc -l)
                 [ "$wget_cnt" -lt "$max_wget" ] && {
                     echo "[ GET ] $image"
@@ -190,7 +204,7 @@ down_images()
                     sleep 1
                 }
             done
-        }
+        fi
     done < "$info"
     # 等待下载完成
     while :; do
@@ -282,7 +296,7 @@ just_test()
 
 ########### Code Start From Here ###########
 
-mkdir -p json images
+mkdir -p output/{json,images,db,report}
 
 touch "$SLVD_TAG_FILE"
 while read tag; do
@@ -293,13 +307,10 @@ while read tag; do
 done < "$TAG_FILE"
 rm -f "$TMP" "$LIST_FILE"
 
-gen_html_report
-exit 0
-
 gen_sql
 create_db
 exec_sql
 down_images
 gen_html_report
-#gen_pdf_report
 exit 0
+gen_pdf_report
